@@ -1,5 +1,16 @@
+# SSH private keys
+*.pem
+*.key
+id_rsa
+id_rsa.*
+id_ed25519
+id_ed25519.*
+
 # Environment variables
 .env
+.env.*
+*.vault-password
+vault-password.txt
 
 # Python
 __pycache__/
@@ -12,6 +23,9 @@ __pycache__/
 # VSCode
 .vscode/
 
+#Editor
+.idea/
+
 # OS files
 .DS_Store
 Thumbs.db
@@ -22,3 +36,8 @@ Thumbs.db
 
 # Ansible
 *.retry
+*.log
+.ansible/
+
+# Ansible local inventory
+automation/inventory/hosts.ini

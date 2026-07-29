@@ -1,0 +1,26 @@
+---
+- name: Collect system information
+  hosts: all
+  gather_facts: true
+
+  tasks:
+    - name: Show hostname
+      ansible.builtin.debug:
+        msg: "Hostname: {{ ansible_hostname }}"
+
+    - name: Show operating system
+      ansible.builtin.debug:
+        msg: "OS: {{ ansible_distribution }} {{ ansible_distribution_version }}"
+
+    - name: Show primary IP address
+      ansible.builtin.debug:
+        msg: "Primary IP: {{ ansible_default_ipv4.address | default('unknown') }}"
+
+    - name: Show uptime
+      ansible.builtin.command: uptime
+      register: uptime_result
+      changed_when: false
+
+    - name: Display uptime
+      ansible.builtin.debug:
+        var: uptime_result.stdout
