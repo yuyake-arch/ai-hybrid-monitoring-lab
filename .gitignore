@@ -8,6 +8,7 @@ id_ed25519.*
 
 # Environment variables
 .env
+**/.env
 .env.*
 *.vault-password
 vault-password.txt
@@ -41,3 +42,9 @@ Thumbs.db
 
 # Ansible local inventory
 automation/inventory/hosts.ini
+
+#Local database
+*.db
+
+# IDE/OS
+.DS_Store
