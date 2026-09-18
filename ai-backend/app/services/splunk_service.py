@@ -25,7 +25,7 @@ class SplunkService:
         incident_time: datetime,
         window_minutes: int = 5,
         max_results: int = 20,
-    ) -> list[dict[str, Any]]:
+    ) -> dict[str, Any]:
 
         earliest = incident_time - timedelta(minutes=window_minutes)
         latest = incident_time + timedelta(minutes=window_minutes)
@@ -84,7 +84,11 @@ class SplunkService:
 
         except requests.RequestException as exc:
             print(f"Splunk search failed: {exc}")
-            return []
+            
+            return {
+                "available": False,
+                "events": [],
+            }
 
     def _parse_export_response(
         self,

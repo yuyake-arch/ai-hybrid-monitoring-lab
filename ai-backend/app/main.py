@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 
 from app.api.incidents import router as incident_router
+from app.api.remediations import router as remediation_router
 
 from app.models.db import init_db
 
@@ -26,3 +27,5 @@ def health():
     return {"status": "healthy"}
 
 app.include_router(incident_router)
+app.include_router(remediation_router)
+

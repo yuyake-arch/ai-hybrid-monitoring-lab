@@ -26,3 +26,9 @@ class IncidentAnalysis(BaseModel):
     confidence: str
     analysis_source: str
 
+class IncidentProcessingAck(BaseModel):
+    event_id: str
+    status: str = "processing"
+    message: str = "Incident is already being processed"
+
+

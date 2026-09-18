@@ -147,3 +147,51 @@ def get_incidents() -> list[dict]:
 
     finally:
         conn.close()
+
+def claim_incident(
+    event_id: str,
+) -> bool:
+
+    conn = get_connection()
+
+    try:
+        conn.execute(
+            """
+            INSERT INTO incident_processing (
+                event_id
+            )
+            VALUES (?)
+            """,
+            (event_id,),
+        )
+
+        conn.commit()
+        return True
+
+    except sqlite3.IntegrityError:
+        conn.rollback()
+        return False
+
+    finally:
+        conn.close()
+
+
+def release_incident_claim(
+    event_id: str,
+) -> None:
+
+    conn = get_connection()
+
+    try:
+        conn.execute(
+            """
+            DELETE FROM incident_processing
+            WHERE event_id = ?
+            """,
+            (event_id,),
+        )
+
+        conn.commit()
+
+    finally:
+        conn.close()

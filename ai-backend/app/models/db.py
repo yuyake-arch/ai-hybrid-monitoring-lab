@@ -24,6 +24,7 @@ def init_db():
                 severity TEXT NOT NULL,
                 message TEXT,
                 summary TEXT,
+                observed_evidence TEXT,
                 possible_causes TEXT,
                 recommended_actions TEXT,
                 confidence TEXT,
@@ -31,6 +32,56 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS remediation_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+                remediation_id TEXT UNIQUE NOT NULL,
+                event_id TEXT NTO NULL,
+
+                host TEXT NOT NULL,
+                target_host TEXT NOT NULL,
+
+                action_id TEXT NOT NULL,
+                action_description TEXT NOT NULL,
+
+                risk TEXT NOT NULL,
+                status TEXT NOT NULL,
+
+                approval_required INTEGER NOT NULL DEFAULT 1,
+
+                ai_recommended_actions TEXT,
+
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+                approved_by TEXT,
+                approved_at TIMESTAMP,
+
+                decision_by TEXT,
+                decision_at TIMESTAMP,
+                executed_by TEXT,
+                changed INTEGER,
+                return_code INTEGER,
+
+                execution_started_at TIMESTAMP,
+                execution_finished_at TIMESTAMP,
+
+                success INTEGER,
+                result_summary TEXT,
+                execution_output TEXT,
+
+                UNIQUE(event_id, action_id)
+            )
+        """)
+
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS incident_processing (
+                event_id TEXT PRIMARY KEY,
+                claimed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
 
         conn.commit()
 
