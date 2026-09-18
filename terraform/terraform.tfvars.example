@@ -1,0 +1,25 @@
+# terraform.tfvars.example
+
+aws_region = "us-east-2"
+
+vpc_cidr              = "10.10.0.0/16"
+public_subnet_cidr     = "10.10.1.0/24"
+private_subnet_cidr    = "10.10.10.0/24"
+management_subnet_cidr = "10.10.20.0/24"
+
+key_name = "your-existing-key-pair"
+
+instance_types = {
+  automation     = "t3.micro"
+  monitoring     = "t3.small"
+  bastion        = "t3.micro"
+  managed_server = "t3.micro"
+  wireguard      = "t3.micro"
+  ai_backend     = "t3.micro"
+  splunk         = "t3.small"
+}
+
+
+# Replace IP
+admin_public_ip          = "203.0.113.10/32"
+wireguard_peer_public_ip = "198.51.100.10/32"
