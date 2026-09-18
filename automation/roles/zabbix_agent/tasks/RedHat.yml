@@ -1,0 +1,28 @@
+---
+- name: Verify Amazon Linux distribution
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == "Amazon"
+      - ansible_facts['distribution_major_version'] == "2023"
+      - ansible_facts['pkg_mgr'] == "dnf"
+    fail_msg: >-
+      The current RedHat-family task supports Amazon Linux 2023 only.
+      Detected:
+      distribution={{ ansible_facts['distribution'] }},
+      version={{ ansible_facts['distribution_version'] }},
+      package_manager={{ ansible_facts['pkg_mgr'] }}.
+
+- name: Install Zabbix repository package
+  ansible.builtin.dnf:
+    name: "{{ zabbix_repo_rpm_amazon_2023 }}"
+    state: present
+    disable_gpg_check: true
+
+- name: Refresh DNF package cache
+  ansible.builtin.dnf:
+    update_cache: true
+
+- name: Install Zabbix Agent 2
+  ansible.builtin.dnf:
+    name: "{{ zabbix_agent_package }}"
+    state: present

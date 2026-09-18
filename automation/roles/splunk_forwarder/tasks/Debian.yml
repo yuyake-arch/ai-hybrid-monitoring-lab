@@ -1,0 +1,11 @@
+---
+- name: Download Splunk Universal Forwarder DEB package
+  ansible.builtin.get_url:
+    url: "{{ splunk_forwarder_deb_url }}"
+    dest: "{{ splunk_forwarder_deb_path }}"
+    mode: "0644"
+
+- name: Install Splunk Universal Forwarder DEB package
+  ansible.builtin.apt:
+    deb: "{{ splunk_forwarder_deb_path }}"
+    state: present

@@ -48,3 +48,13 @@ automation/inventory/hosts.ini
 
 # IDE/OS
 .DS_Store
+
+# Ansible Vault secrets
+automation/vault/*.yml
+!automation/vault/*.example.yml
+
+# Backup files
+*.bak
+*.bak.*
+*.backup
+*.old

@@ -1,0 +1,8 @@
+---
+- name: Install and configure Zabbix Agent 2
+  hosts: zabbix_agents
+  become: true
+  gather_facts: true
+
+  roles:
+    - zabbix_agent

@@ -1,0 +1,4 @@
+---
+zabbix_agent_hostname: "aws-managed-svr-01"
+
+splunk_forwarder_enabled: false

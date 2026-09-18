@@ -1,0 +1,14 @@
+---
+- name: Install Zabbix repository package
+  ansible.builtin.apt:
+    deb: "{{ zabbix_repo_deb_ubuntu }}"
+    state: present
+
+- name: Update APT cache
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: Install Zabbix Agent 2
+  ansible.builtin.apt:
+    name: "{{ zabbix_agent_package }}"
+    state: present

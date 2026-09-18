@@ -1,0 +1,185 @@
+---
+- name: Display detected target OS
+  ansible.builtin.debug:
+    msg:
+      - "Host: {{ inventory_hostname }}"
+      - "Distribution: {{ ansible_facts['distribution'] }}"
+      - "OS family: {{ ansible_facts['os_family'] }}"
+      - "Version: {{ ansible_facts['distribution_version'] }}"
+      - "Architecture: {{ ansible_facts['architecture'] }}"
+
+- name: Validate supported operating system
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['os_family'] in ["Debian", "RedHat"]
+      - ansible_facts['architecture'] in ["x86_64", "amd64"]
+    fail_msg: >-
+      Unsupported platform:
+      {{ ansible_facts['distribution'] }}
+      {{ ansible_facts['distribution_version'] }}
+      {{ ansible_facts['architecture'] }}
+    success_msg: >-
+      Supported platform detected:
+      {{ ansible_facts['distribution'] }}
+      {{ ansible_facts['distribution_version'] }}
+
+# ---------------------------------------------------------
+# Splunk installation
+# ---------------------------------------------------------
+
+- name: Check whether Splunk Universal Forwarder is already installed
+  ansible.builtin.stat:
+    path: "{{ splunk_forwarder_home }}/bin/splunk"
+  register: splunk_forwarder_binary
+
+- name: Load OS-specific Splunk installation tasks
+  ansible.builtin.include_tasks: "{{ ansible_facts['os_family'] }}.yml"
+  when: not splunk_forwarder_binary.stat.exists
+
+# ---------------------------------------------------------
+# First-time initialization
+# ---------------------------------------------------------
+
+- name: Check whether Splunk has completed first-time initialization
+  ansible.builtin.stat:
+    path: "{{ splunk_forwarder_home }}/etc/passwd"
+  register: splunk_initialized
+
+- name: Perform non-interactive Splunk first-time startup
+  ansible.builtin.command:
+    cmd: >-
+      {{ splunk_forwarder_home }}/bin/splunk
+      start
+      --accept-license
+      --answer-yes
+      --no-prompt
+      --seed-passwd {{ splunk_admin_password }}
+  no_log: true
+  when:
+    - splunk_forwarder_enabled
+    - not splunk_initialized.stat.exists
+
+# ---------------------------------------------------------
+# systemd registration
+# ---------------------------------------------------------
+
+- name: Gather service facts
+  ansible.builtin.service_facts:
+
+- name: Set Splunk Forwarder service status
+  ansible.builtin.set_fact:
+    splunk_service_registered: >-
+      {{ 'SplunkForwarder.service' in ansible_facts.services }}
+
+- name: Check whether Splunk process is running
+  ansible.builtin.command:
+    cmd: pgrep -x splunkd
+  register: splunk_process
+  changed_when: false
+  failed_when: false
+  when:
+    - splunk_forwarder_enabled
+    - not splunk_service_registered
+
+- name: Stop Splunk before initial boot-start configuration
+  ansible.builtin.command:
+    cmd: "{{ splunk_forwarder_home }}/bin/splunk stop"
+  become: true
+  become_user: "{{ splunk_forwarder_user }}"
+  when:
+    - splunk_forwarder_enabled
+    - not splunk_service_registered
+    - splunk_process.rc == 0
+
+- name: Configure Splunk Forwarder systemd boot-start
+  ansible.builtin.command:
+    cmd: >-
+      {{ splunk_forwarder_home }}/bin/splunk
+      enable boot-start
+      -systemd-managed 1
+      -user {{ splunk_forwarder_user }}
+      -group {{ splunk_forwarder_group }}
+  become: true
+  when:
+    - splunk_forwarder_enabled
+    - not splunk_service_registered
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: splunk_forwarder_enabled
+
+- name: Ensure Splunk Forwarder is enabled and running
+  ansible.builtin.systemd:
+    name: SplunkForwarder
+    enabled: true
+    state: started
+  when: splunk_forwarder_enabled
+
+# ---------------------------------------------------------
+# Splunk forwarding configuration
+# ---------------------------------------------------------
+
+- name: Ensure Splunk local configuration directory exists
+  ansible.builtin.file:
+    path: "{{ splunk_forwarder_home }}/etc/system/local"
+    state: directory
+    owner: "{{ splunk_forwarder_user }}"
+    group: "{{ splunk_forwarder_group }}"
+    mode: "0755"
+
+- name: Configure Splunk forwarding destination
+  ansible.builtin.template:
+    src: outputs.conf.j2
+    dest: "{{ splunk_forwarder_home }}/etc/system/local/outputs.conf"
+    owner: "{{ splunk_forwarder_user }}"
+    group: "{{ splunk_forwarder_group }}"
+    mode: "0644"
+    backup: true
+  notify: Restart Splunk Forwarder
+
+# ---------------------------------------------------------
+# Common Linux security inputs
+# ---------------------------------------------------------
+
+- name: Set SSH service name for Debian family
+  ansible.builtin.set_fact:
+    splunk_ssh_service: "ssh.service"
+  when:
+    - splunk_common_linux_security_enabled
+    - ansible_facts['os_family'] == "Debian"
+
+- name: Set SSH service name for RedHat family
+  ansible.builtin.set_fact:
+    splunk_ssh_service: "sshd.service"
+  when:
+    - splunk_common_linux_security_enabled
+    - ansible_facts['os_family'] == "RedHat"
+
+- name: Add Splunk Forwarder user to systemd-journal group
+  ansible.builtin.user:
+    name: "{{ splunk_forwarder_user }}"
+    groups: systemd-journal
+    append: true
+  notify: Restart Splunk Forwarder
+  when: splunk_common_linux_security_enabled
+
+- name: Ensure common Linux security app directory exists
+  ansible.builtin.file:
+    path: "{{ splunk_forwarder_home }}/etc/apps/common_linux_security/local"
+    state: directory
+    owner: "{{ splunk_forwarder_user }}"
+    group: "{{ splunk_forwarder_group }}"
+    mode: "0755"
+  when: splunk_common_linux_security_enabled
+
+- name: Configure common Linux security inputs
+  ansible.builtin.template:
+    src: common_linux_security_inputs.conf.j2
+    dest: "{{ splunk_forwarder_home }}/etc/apps/common_linux_security/local/inputs.conf"
+    owner: "{{ splunk_forwarder_user }}"
+    group: "{{ splunk_forwarder_group }}"
+    mode: "0644"
+    backup: true
+  notify: Restart Splunk Forwarder
+  when: splunk_common_linux_security_enabled

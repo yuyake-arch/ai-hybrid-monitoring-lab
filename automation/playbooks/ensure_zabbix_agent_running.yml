@@ -1,0 +1,8 @@
+---
+- name: Ensure Zabbix Agent 2 is running
+  hosts: remediation_targets
+  become: true
+  gather_facts: false
+
+  roles:
+    - remediation_zabbix_agent

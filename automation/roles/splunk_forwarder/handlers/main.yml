@@ -1,0 +1,6 @@
+---
+- name: Restart Splunk Forwarder
+  ansible.builtin.systemd:
+    name: SplunkForwarder
+    state: restarted
+  when: splunk_forwarder_enabled

@@ -1,0 +1,11 @@
+---
+- name: Install and configure Splunk Universal Forwarder
+  hosts: splunk_forwarders
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../vault/splunk.yml
+
+  roles:
+    - splunk_forwarder

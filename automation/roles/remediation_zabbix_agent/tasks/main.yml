@@ -1,0 +1,6 @@
+---
+- name: Ensure Zabbix Agent 2 service is enabled and running
+  ansible.builtin.service:
+    name: "{{ zabbix_agent_service_name | default('zabbix-agent2') }}"
+    enabled: true
+    state: started

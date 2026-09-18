@@ -1,0 +1,11 @@
+[journald://linux_security_ssh]
+disabled = 0
+index = linux_security
+sourcetype = linux:ssh
+journalctl-unit = {{ splunk_ssh_service }}
+
+[journald://linux_security_sudo]
+disabled = 0
+index = linux_security
+sourcetype = linux:sudo
+journalctl-identifier = sudo

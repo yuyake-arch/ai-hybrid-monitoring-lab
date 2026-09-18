@@ -1,0 +1,12 @@
+---
+zabbix_version: "7.4"
+
+zabbix_agent_server: "10.10.10.10"
+zabbix_agent_server_active: "10.10.10.10"
+
+zabbix_agent_listen_port: 10050
+zabbix_agent_timeout: 10
+
+zabbix_agent_package: zabbix-agent2
+zabbix_agent_service: zabbix-agent2
+zabbix_agent_config_path: /etc/zabbix/zabbix_agent2.conf

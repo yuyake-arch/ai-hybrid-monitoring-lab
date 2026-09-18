@@ -1,0 +1,32 @@
+---
+splunk_forwarder_version: "10.4.2"
+splunk_forwarder_build: "33c3bf42cd73"
+
+splunk_forwarder_home: "/opt/splunkforwarder"
+splunk_forwarder_user: "splunkfwd"
+splunk_forwarder_group: "splunkfwd"
+
+splunk_admin_username: "splunk"
+
+splunk_indexer_host: "10.10.10.30"
+splunk_indexer_port: 9997
+
+splunk_forwarder_deb_package: >-
+  splunkforwarder-{{ splunk_forwarder_version }}-{{ splunk_forwarder_build }}-linux-amd64.deb
+
+splunk_forwarder_rpm_package: >-
+  splunkforwarder-{{ splunk_forwarder_version }}-{{ splunk_forwarder_build }}.x86_64.rpm
+
+splunk_forwarder_deb_url: >-
+  https://download.splunk.com/products/universalforwarder/releases/{{ splunk_forwarder_version }}/linux/{{ splunk_forwarder_deb_package }}
+
+splunk_forwarder_rpm_url: >-
+  https://download.splunk.com/products/universalforwarder/releases/{{ splunk_forwarder_version }}/linux/{{ splunk_forwarder_rpm_package }}
+
+splunk_forwarder_deb_path: "/tmp/{{ splunk_forwarder_deb_package }}"
+splunk_forwarder_rpm_path: "/tmp/{{ splunk_forwarder_rpm_package }}"
+
+splunk_forwarder_enabled: true
+
+# Common Linux security log collection
+splunk_common_linux_security_enabled: true
