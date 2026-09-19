@@ -616,9 +616,9 @@ This creates a clearer separation between data-plane and management-plane connec
 
 ---
 
-## 20. WireGuard hybrid connectivity implementation Result
+## 20. Final Result
 
-WireGuard hybrid connectivity implementation transformed the hybrid lab from a collection of temporary connectivity mechanisms into a persistent routed hybrid network.
+The WireGuard implementation transformed the hybrid lab from a collection of temporary connectivity mechanisms into a persistent routed hybrid network.
 
 The resulting environment now provides:
 

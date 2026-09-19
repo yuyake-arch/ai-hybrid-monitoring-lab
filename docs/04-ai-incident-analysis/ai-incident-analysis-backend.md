@@ -374,7 +374,7 @@ The AI Backend generates machine-readable operational logs using JSON Lines.
 Logs are written to:
 
 ```text
-/var/log/ai-backend/incidents.jsonl
+/var/log/ai-backend/analysis.json.log
 ```
 
 Example:
@@ -403,7 +403,7 @@ Each line represents an independent backend event.
 The existing Splunk Universal Forwarder infrastructure was extended to monitor:
 
 ```text
-/var/log/ai-backend/incidents.jsonl
+/var/log/ai-backend/analysis.json.log
 ```
 
 The AI Backend logs use a dedicated sourcetype such as:

@@ -736,13 +736,12 @@ This provides a scalable foundation for managing additional monitored servers in
 
 ## Future Improvements
 
-Subsequent project phases extended this automation with:
+Subsequent phases expanded the project with Terraform-based infrastructure management, additional Linux distribution support, and broader agent and forwarder automation.
+
+Potential future improvements include:
 
 - AWS dynamic inventory
 - Automatic Zabbix host registration using the Zabbix API
 - Bulk deployment to multiple managed nodes
-- Terraform-based AWS infrastructure provisioning
-- Automated Security Group management
-- Additional Linux distribution support
 - CI/CD validation for Ansible code
 - Ansible linting and automated syntax validation

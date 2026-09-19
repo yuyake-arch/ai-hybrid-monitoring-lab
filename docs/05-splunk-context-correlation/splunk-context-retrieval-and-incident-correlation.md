@@ -2,7 +2,7 @@
 
 ## Overview
 
-this implementation phase extends the **AI-Assisted Hybrid Monitoring & Automation Lab**
+This implementation phase extends the **AI-Assisted Hybrid Monitoring & Automation Lab**
 from alert-only AI analysis into an evidence-aware incident correlation
 workflow.
 
@@ -56,7 +56,7 @@ remediation remained outside this correlation layer and was implemented separate
 
 ## Objectives
 
-The this implementation phase implementation focused on the following goals:
+This implementation phase focused on the following goals:
 
 -   Query Splunk programmatically from the dedicated AI Backend.
 -   Keep Splunk management access private and restricted.
@@ -458,7 +458,7 @@ Splunk.
 
 ## 11. Failure Handling and Graceful Degradation
 
-The final this implementation phase workflow was tested under multiple failure scenarios.
+The final correlation workflow was tested under multiple failure scenarios.
 
 ### Normal Path
 
@@ -567,7 +567,7 @@ troubleshooting.
 
 ## 13. Security Considerations
 
-this implementation phase applies several security controls:
+This implementation phase applies several security controls:
 
 -   Splunk management port `8089` is not publicly exposed.
 -   AWS Security Groups restrict API access to the AI Backend.
@@ -653,9 +653,9 @@ and future monitoring.
 
 ------------------------------------------------------------------------
 
-## 16. this implementation phase Outcome
+## 16. Outcome
 
-this implementation phase transforms the project from:
+This implementation phase transforms the project from:
 
 ``` text
 Alert -> AI interpretation
