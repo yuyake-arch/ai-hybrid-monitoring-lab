@@ -1,401 +1,366 @@
 # Security & Reliability Review
 
-## 1. Overview
+## Overview
 
-This phase focused on a final **security and reliability review** of the
-AI-Assisted Hybrid Monitoring & Automation Lab.
+This phase reviews the completed **AI-Assisted Hybrid Monitoring & Automation Lab** for network exposure, least privilege, secrets and file permissions, remediation authorization, service persistence, auditability, and documented operational limitations.
 
-Rather than adding new functionality, this phase reviewed the existing
-platform for network exposure, least-privilege authorization, secrets
-and file permissions, structured log retention, Ansible credential
-scope, remediation authorization, service recovery, and auditability.
+The review did not redesign the working architecture. It validated existing controls, hardened identified weaknesses, and documented remaining lab trade-offs.
 
-The review identified practical hardening opportunities. Some were
-remediated and validated immediately, while others were documented as
-accepted lab limitations or future hardening work.
+---
 
-------------------------------------------------------------------------
+## 1. Review Scope
 
-## 2. Review Scope
+The review covered:
 
--   AWS Security Groups and inter-service network paths
--   SSH and Linux access controls
--   AI Backend and Remediation API security
--   Splunk Server and Universal Forwarder security
--   Splunk API authorization
--   Ansible and Ansible Vault usage
--   WireGuard gateway security
--   Structured application and remediation logs
--   Docker and systemd service reliability
--   Remediation state control and audit history
--   Git repository and configuration hygiene
+- AWS Security Groups and inter-service network paths;
+- SSH and administrative access;
+- AI Backend and Remediation API access;
+- Splunk Server, Universal Forwarders, and API authorization;
+- Ansible and Ansible Vault scope;
+- WireGuard connectivity;
+- structured application and remediation logs;
+- SQLite permissions;
+- Docker and systemd persistence;
+- remediation lifecycle and audit history;
+- Git and configuration hygiene.
 
-------------------------------------------------------------------------
+---
 
-## 3. Key Security Improvements
+## 2. Role-Based Security Group Design
 
-### 3.1 Splunk API Least-Privilege Access
+The AWS environment uses separate Security Groups for different service responsibilities.
 
-The AI Backend retrieves operational context from Splunk through the
-Management API on TCP 8089.
+The AWS console currently shows ten named project Security Groups plus two AWS `default` groups. The default groups are not part of the intentional application security model and are omitted below.
 
-The dedicated `ai-context-api` account was found to use the built-in
-Splunk `user` role. Although non-administrative, that role allowed
-searches across all non-restricted indexes. Code review confirmed that
-the AI Backend requires only:
+| Security Group | Role | Primary Security Purpose |
+|---|---|---|
+| `bastion-sg` | Bastion | Administrative SSH entry boundary |
+| `monitor-sg` | Monitoring Server | Monitoring platform and approved internal connectivity |
+| `ai-backend-sg` | AI Backend | Private incident-analysis API boundary |
+| `automation-sg` | Automation Server | Private remediation-service boundary |
+| `managed-server-sg` | Managed workload | Base workload access boundary |
+| `ansible-managed-sg` | Ansible-managed nodes | SSH management authorization |
+| `zabbix-agent-sg` | Monitored nodes | Zabbix Agent monitoring authorization |
+| `splunk-client-sg` | AWS Forwarder clients | Identifies AWS hosts authorized to forward logs |
+| `splunk-server-sg` | Splunk Server | Splunk receiver/API/administrative service boundary |
+| `wireguard-sg` | WireGuard Gateway | Hybrid VPN gateway boundary |
 
--   `app_logs`
--   `linux_os`
--   `linux_security`
+### Why Multiple Security Groups Are Used
 
-The existing `ai_context_reader` role was verified to restrict
-searchable indexes to exactly those three indexes. The API account was
-reassigned from `user` to `ai_context_reader`.
+The design separates server identity from service responsibility.
 
-``` text
-ai-context-api
-└── ai_context_reader
-    ├── app_logs
-    ├── linux_os
-    └── linux_security
+A host can participate in multiple operational roles:
+
+```text
+Managed EC2 instance
+├── base workload access
+├── Ansible management
+├── Zabbix monitoring
+└── Splunk forwarding
 ```
 
-After the role change, a live AI analysis successfully retrieved three
-Splunk events, confirming that least-privilege authorization did not
-break the integration.
+Instead of placing every rule in one large Security Group, reusable service-oriented groups can be attached as needed:
 
-**Result: FIXED / VALIDATED**
+```text
+managed-server-sg
+ansible-managed-sg
+zabbix-agent-sg
+splunk-client-sg
+```
 
-### 3.2 AI Analysis Log Security and Retention
+This makes the purpose of a rule easier to understand and limits unrelated access when new servers are onboarded.
 
-The AI Backend structured log was standardized as:
+`splunk-client-sg` should be interpreted as an authorization/grouping mechanism for AWS instances running Splunk Universal Forwarder, not as the Splunk client software itself.
 
-``` text
+---
+
+## 3. Validated Network Flows
+
+The Security Group review traced required communication by initiator, destination, and purpose.
+
+| Initiator / Source | Destination | Port / Protocol | Purpose | Review Result |
+|---|---|---|---|---|
+| Administrator | Bastion | TCP 22 | Administrative SSH | Required |
+| Automation Server | Ansible-managed nodes | TCP 22 | Configuration and remediation | Required |
+| Zabbix Server | Zabbix Agent hosts | TCP 10050 | Passive checks | Required |
+| Zabbix Agent hosts | Zabbix Server | TCP 10051 | Active-check path | Retained for testing/future use |
+| AWS Splunk Forwarder clients | Splunk Server | TCP 9997 | Log forwarding | Required |
+| AI Backend | Splunk Server | TCP 8089 | Splunk search/context API | Required |
+| Monitoring Server | AI Backend | TCP 8000 | Incident webhook and Operator Console backend access | Required |
+| AI Backend | Automation Server | TCP 8443 | Controlled remediation API | Required |
+| Local peer | WireGuard Gateway | UDP 51820 | WireGuard VPN | Required |
+| Zabbix Server | WireGuard Gateway | TCP 10050 | Gateway monitoring | Required where passive monitoring is used |
+
+No reviewed ingress path required immediate removal. Splunk ports `8000`, `8089`, and `9997` may listen on host interfaces, but AWS Security Groups restrict permitted network sources and remain the primary network boundary.
+
+---
+
+## 4. Least-Privilege and Data Protection Improvements
+
+### Splunk API Authorization
+
+The dedicated `ai-context-api` account was reassigned from the broader built-in Splunk `user` role to:
+
+```text
+ai_context_reader
+├── app_logs
+├── linux_os
+└── linux_security
+```
+
+A live incident-analysis test continued to retrieve Splunk evidence after the change.
+
+**Status: FIXED / VALIDATED**
+
+### AI Analysis and Remediation Logs
+
+The AI analysis log is stored at:
+
+```text
 /var/log/ai-backend/analysis.json.log
 ```
 
-A dedicated `incident-analysis-logs` group was introduced. The directory
-uses mode `2750`, while the active log uses mode `0640`. The AI Backend
-systemd service uses `SupplementaryGroups=incident-analysis-logs` and
-`UMask=0027`.
+The hardened model uses:
 
-This allows the application to write logs and the Splunk Forwarder to
-read them without granting unnecessary access to other local users.
+```text
+Directory: 2750
+Log file:  0640
+Group:     incident-analysis-logs
+systemd:   SupplementaryGroups=incident-analysis-logs
+           UMask=0027
+```
 
-Daily log rotation with 14 retained rotations, compression, delayed
-compression, and `copytruncate` was configured and validated. The
-Remediation API structured execution log was hardened using the same
-general model.
+Daily rotation, 14 retained rotations, compression, delayed compression, and `copytruncate` were configured and validated. The Remediation API execution log follows the same general least-privilege approach.
 
-**Result: FIXED / VALIDATED**
+**Status: FIXED / VALIDATED**
 
-### 3.3 SQLite Incident Database Permissions
+### SQLite Permissions
 
-The AI Backend SQLite database contained incident and remediation state
-information but was found with mode `0644`. It was restricted to:
+The AI Backend SQLite database was found with unnecessary local read access and was restricted to:
 
-``` text
+```text
 0600 ubuntu:ubuntu
 ```
 
-The existing systemd `UMask=0027` also supports restrictive permissions
-for future application-created files.
+**Status: FIXED / VALIDATED**
 
-**Result: FIXED / VALIDATED**
+### Scoped Ansible Vault
 
-### 3.4 Scoped Ansible Vault
-
-The Splunk Forwarder credential Vault had originally been placed under a
-group-variable path. Because a managed host can belong to both Zabbix
-and Splunk Ansible groups, unrelated Zabbix remediation operations
-attempted to load and decrypt the Splunk Vault.
+The Splunk administrator credential originally lived in automatically loaded inventory group variables. Because a host can belong to both Zabbix and Splunk groups, unrelated Ansible operations attempted to load the Splunk Vault.
 
 The secret was moved to:
 
-``` text
+```text
 automation/vault/splunk.yml
 ```
 
-Only the Splunk Forwarder playbook explicitly loads this Vault file.
-General Ansible connectivity and Zabbix remediation therefore no longer
-depend on Splunk credentials.
+Only the Splunk Forwarder playbook explicitly loads this Vault.
 
-This reduced credential scope and removed an unnecessary dependency
-between independent automation workflows.
-
-**Result: FIXED / VALIDATED**
-
-### 3.5 Repository Hygiene
-
-Local backup files existed inside the automation source tree.
-Repository-wide ignore rules were added:
-
-``` gitignore
-*.bak
-*.bak.*
-*.backup
-*.old
+```text
+General Ansible / Zabbix remediation → no Splunk Vault dependency
+Splunk Forwarder workflow            → explicitly loads vault/splunk.yml
 ```
 
-`git check-ignore` confirmed that the identified backup files are
-excluded. Existing protections for SSH keys, environment files, Vault
-password files, Terraform state, local Ansible inventory, and logs were
-also reviewed.
+**Status: FIXED / VALIDATED**
 
-**Result: FIXED / VALIDATED**
+### Repository Hygiene
 
-------------------------------------------------------------------------
+Repository ignore rules protect local backup files and other sensitive runtime material. Existing exclusions were reviewed for SSH keys, environment files, Vault password files, Terraform state, local Ansible inventory, and logs.
 
-## 4. Network and Access-Control Validation
+**Status: FIXED / VALIDATED**
 
-Terraform-managed Security Group ingress paths were reviewed against
-their operational purpose. The major flows were confirmed as
-intentional, including Bastion-based administration, monitoring-to-agent
-traffic, Monitoring-to-AI traffic, AI-to-Splunk context retrieval,
-AI-to-Remediation API access, Automation-to-managed-node SSH, Splunk
-forwarding, and WireGuard paths.
-
-No ingress rule requiring immediate removal was identified. TCP 10051
-was retained as an explicitly documented future/testing path for Zabbix
-active checks.
-
-Splunk ports 8000, 8089, and 9997 listen on host interfaces, while AWS
-Security Groups restrict permitted sources. Security Groups therefore
-remain the primary network access-control boundary.
-
-### Public IPv4 Design
-
-Bastion and WireGuard intentionally retain public connectivity. Some
-early lab workloads retain automatically assigned public IPv4 addresses
-from the initial deployment phase, when outbound package installation
-was provided without introducing NAT Gateway cost.
-
-The later deployment pattern improved this design: private workloads do
-not normally receive permanent public addresses, and temporary public
-connectivity can be attached only when needed. Existing legacy instances
-were not recreated solely to remove their addresses because application
-ingress is already restricted by Security Groups.
-
-**Decision: ACCEPTED / DOCUMENTED LAB TRADE-OFF**
-
-------------------------------------------------------------------------
+---
 
 ## 5. Remediation Security Controls
 
-The remediation architecture was reviewed to ensure that an AI
-recommendation cannot directly trigger arbitrary automation.
+The remediation design ensures that AI-generated text cannot become arbitrary infrastructure execution.
 
-``` text
+```text
 AI recommendation
+        ↓
+Deterministic policy
         ↓
 PENDING_APPROVAL
         ↓
-Human approval or rejection
+Human approval / rejection
         ↓
 APPROVED
         ↓
-EXECUTING
+Private Remediation API
+        ↓
+Allowlisted Ansible execution
         ↓
 SUCCESS / FAILED
 ```
 
-Approval and execution transitions are enforced by the backend and
-database rather than only by the Operator Console UI.
+The backend and database enforce lifecycle transitions rather than relying only on the Operator Console.
 
-The Remediation API applies service-token authentication, action and
-target allowlists, fixed action-to-playbook mapping, subprocess
-execution without `shell=True`, execution timeout, and explicit
-failure/return-code handling. Authentication also fails closed when the
-service token is not configured.
+The private Remediation API applies:
 
-**Result: VALIDATED / PASS**
+- service-token authentication;
+- action allowlisting;
+- target-host allowlisting;
+- fixed action-to-playbook mapping;
+- no caller-supplied arbitrary shell command or playbook;
+- subprocess execution without `shell=True`;
+- execution timeout;
+- return-code and failure handling;
+- fail-closed behavior when the service token is unavailable.
 
-------------------------------------------------------------------------
+**Status: VALIDATED / PASS**
+
+---
 
 ## 6. Reliability Validation
 
-The AI Backend, Remediation API, Splunk Server, Splunk Universal
-Forwarder, and WireGuard services were confirmed active and configured
-for boot persistence.
+The following services were validated as systemd-managed and configured for persistence:
 
-The Docker-based Monitoring Server runs Zabbix Server, Zabbix Web,
-Grafana, and PostgreSQL. All four containers were running during
-validation, Zabbix Web reported healthy status, and all use:
-
-``` text
-restart=unless-stopped
+```text
+AI Backend
+Remediation API
+Splunk Server
+Splunk Universal Forwarder
+WireGuard wg-quick@wg0
 ```
 
-This provides automatic container recovery after Docker daemon or host
-restart unless a container was intentionally stopped.
+The Monitoring Server uses Docker for:
 
-**Result: VALIDATED / PASS**
+```text
+Zabbix Server
+Zabbix Web
+Grafana
+PostgreSQL
+```
 
-------------------------------------------------------------------------
+The monitoring containers were running during validation and use `restart=unless-stopped`.
 
-## 7. Remediation Auditability and Traceability
+**Status: VALIDATED / PASS**
 
-The remediation database was reviewed to verify that operational
-decisions and execution results remain traceable.
+---
 
-Audit records include incident/event association, host and action,
-remediation state, operator identity and decision timestamp, execution
-actor, execution start/finish timestamps, success/failure,
-configuration-change indicator, and Ansible return code.
+## 7. Auditability and Traceability
 
-Actual records contained both successful and failed remediations. Failed
-executions remained recorded with `FAILED` status and non-zero return
-codes, while pending remediations correctly lacked decision and
-execution fields until operator action occurred.
+The remediation data model retains:
 
-**Result: VALIDATED / PASS**
+- incident/event association;
+- source and target host;
+- action ID;
+- remediation lifecycle state;
+- operator identity and decision timestamp;
+- execution actor;
+- execution start and finish timestamps;
+- success/failure result;
+- changed state;
+- Ansible return code.
 
-------------------------------------------------------------------------
+Both successful and failed remediation executions were observed. Structured application/remediation logs are also forwarded to Splunk, providing a second operational audit surface.
+
+**Status: VALIDATED / PASS**
+
+---
 
 ## 8. Findings and Risk Decisions
 
-  ------------------------------------------------------------------------------------
-  Finding                   Risk              Decision               Status
-  ------------------------- ----------------- ---------------------- -----------------
-  Splunk API account        Medium            Assigned               **FIXED /
-  inherited broad default                     `ai_context_reader`,   VALIDATED**
-  `user` index access                         restricted to three    
-                                              required indexes       
+| Finding | Decision | Status |
+|---|---|---|
+| Splunk API account had broader index access than required | Restricted to `ai_context_reader` and three approved indexes | **FIXED / VALIDATED** |
+| Structured logs required stronger permissions and retention | Dedicated group, restrictive modes, systemd umask, log rotation | **FIXED / VALIDATED** |
+| SQLite database was locally readable with mode `0644` | Restricted to `0600` | **FIXED / VALIDATED** |
+| Splunk Vault created cross-workflow dependency | Moved to workflow-scoped `automation/vault/splunk.yml` | **FIXED / VALIDATED** |
+| AI Backend disables Splunk TLS certificate verification | Private SG-restricted path and least-privileged account retained; trusted PKI deferred | **ACCEPTED / DOCUMENTED** |
+| RedHat UF install lacks independent package verification | Pinned official build retained; checksum/signature verification deferred | **ACCEPTED / DOCUMENTED** |
+| Existing RedHat host predates current UF fresh-install role | Validate later on a disposable/new RedHat-family host | **PARTIALLY VALIDATED** |
+| Core service startup/restart persistence | Existing systemd and Docker controls retained | **VALIDATED / PASS** |
 
-  Application/remediation   Medium            Dedicated groups,      **FIXED /
-  log permissions and                         restrictive modes,     VALIDATED**
-  retention required                          systemd umask, log     
-  hardening                                   rotation               
+---
 
-  SQLite incident database  Medium            Restricted database to **FIXED /
-  was locally readable with                   `0600`                 VALIDATED**
-  mode `0644`                                                        
-
-  Splunk Vault created an   Medium            Moved secret to        **FIXED /
-  unnecessary                                 workflow-scoped Vault  VALIDATED**
-  cross-workflow dependency                                          
-
-  AI Backend disables       Medium            Private SG-restricted  **ACCEPTED /
-  Splunk TLS certificate                      HTTPS path; trusted    DOCUMENTED**
-  verification                                PKI deferred           
-
-  RedHat UF RPM             Low--Medium       Pinned official        **ACCEPTED /
-  installation lacks                          version/build; vendor  DOCUMENTED**
-  independent package                         checksum/signature     
-  verification                                planned                
-
-  Current RedHat host       Low               Validate on a future   **PARTIALLY
-  predates the Ansible UF                     new/disposable         VALIDATED**
-  fresh-install workflow                      RedHat-family host     
-
-  Core service              Low               Existing systemd and   **VALIDATED /
-  startup/restart                             Docker persistence     PASS**
-  persistence                                 controls retained      
-  ------------------------------------------------------------------------------------
-
-------------------------------------------------------------------------
-
-## 9. Accepted Limitations and Future Hardening
+## 9. Accepted Limitations
 
 ### Splunk TLS Certificate Verification
 
-The AI Backend connects to Splunk over HTTPS, but the Python client
-currently uses `verify=False`. The Splunk server uses the default Splunk
-certificate chain (`SplunkServerDefaultCert` issued by
-`SplunkCommonCA`).
+The AI Backend currently connects to the Splunk Management API with certificate verification disabled.
 
-Current compensating controls include private VPC communication, TCP
-8089 restricted by AWS Security Group, a dedicated non-admin API
-account, and the index-restricted `ai_context_reader` role.
+Compensating controls are:
 
-Future hardening should deploy a trusted internal certificate, use a
-matching DNS identity, establish CA trust on the AI Backend, and enable
-certificate verification.
+```text
+private VPC communication
++ Security Group restricted TCP 8089
++ dedicated non-admin API identity
++ ai_context_reader index restriction
+```
+
+Future hardening should deploy a trusted internal certificate/CA and enable certificate verification.
 
 ### RedHat Splunk Forwarder Package Integrity
 
-The RedHat-family installation task uses an official Splunk HTTPS
-download URL with a pinned version/build, but currently uses
-`disable_gpg_check: true` and does not independently validate a vendor
-checksum.
+The RedHat-family installation uses an official Splunk HTTPS download URL with a pinned version/build but currently uses:
 
-Future hardening should verify the RPM using a trusted vendor checksum
-or signature before installation.
+```text
+disable_gpg_check: true
+```
+
+It does not independently validate a vendor checksum. Future hardening should verify the package using a trusted checksum or signature.
 
 ### RedHat Fresh-Install Validation
 
-`aws-managed-svr-01` currently runs Splunk Universal Forwarder 10.4.1,
-but the installation predates the current Ansible Splunk role. The role
-correctly detects the existing installation and avoids an implicit
-upgrade.
+`aws-managed-svr-01` currently runs Splunk Universal Forwarder 10.4.1 and predates the latest Ansible fresh-install workflow. The role correctly preserves the existing installation rather than implicitly upgrading it.
 
-A future new or disposable RedHat-family host should be used to validate
-the complete Ansible fresh-install path without disrupting a working
-monitored system.
+A future disposable RedHat-family host should validate the complete fresh-install path.
 
-------------------------------------------------------------------------
+### Public IPv4 Trade-Off
+
+Bastion and WireGuard intentionally retain public connectivity.
+
+Some early lab workloads also retain public IPv4 addresses from the initial no-NAT design. They were not recreated solely to remove those addresses because application ingress is restricted by Security Groups.
+
+This remains a documented cost/security trade-off for the lab.
+
+---
 
 ## 10. Evidence
 
-### Evidence 1 --- Splunk Least-Privilege Role
+### Splunk Least-Privilege Role
 
-The `ai_context_reader` role allows only the three indexes required by
-the AI Backend. Wildcard index access is not enabled.
+![Splunk AI Context Reader](splunk-ai-context-reader.png)
 
-![Splunk AI Context
-Reader](splunk-ai-context-reader.png)
+### Splunk Context Retrieval
 
-### Evidence 2 --- Splunk Context Retrieval After Role Hardening
+![Splunk Context Retrieval](splunk-context-retrieval.png)
 
-After changing `ai-context-api` to the dedicated role, the AI Backend
-successfully retrieved three Splunk events.
+### AI Analysis Log Security
 
-![Splunk Context
-Retrieval](splunk-context-retrieval.png)
+![AI Analysis Log Security](analysis-log-security.png)
 
-### Evidence 3 --- AI Analysis Log Permissions and Rotation
+### Remediation Audit Trail
 
-The active and rotated AI analysis logs retain the dedicated
-`incident-analysis-logs` group and restrictive permissions.
+![Remediation Audit Trail](remediation-audit-trail.png)
 
-![AI Analysis Log
-Security](analysis-log-security.png)
+### Monitoring Reliability
 
-### Evidence 4 --- Remediation Audit Trail
+![Monitoring Reliability](monitoring-reliability.png)
 
-The remediation database contains pending, successful, and failed
-operations together with operator identity and execution results.
-
-![Remediation Audit
-Trail](remediation-audit-trail.png)
-
-### Evidence 5 --- Monitoring Stack Reliability
-
-The Zabbix Server, Zabbix Web, Grafana, and PostgreSQL containers were
-running, with Zabbix Web healthy, and all use the `unless-stopped`
-restart policy.
-
-![Monitoring
-Reliability](monitoring-reliability.png)
-
-------------------------------------------------------------------------
+---
 
 ## 11. Outcome
 
-This phase completed a security and reliability review of the integrated
-monitoring and remediation platform without introducing unnecessary
-architectural redesign.
+The final review strengthened the lab without changing its core architecture.
 
-The review produced concrete hardening improvements in Splunk least
-privilege, structured-log protection and retention, SQLite permissions,
-Ansible Vault scope, and repository hygiene. It also validated the
-existing defense layers around network access, SSH, WireGuard,
-remediation authorization, human approval, service persistence, and
-audit history.
+The most important security characteristic is the use of **multiple independent control layers**:
 
-Remaining TLS and package-integrity limitations were explicitly
-documented with compensating controls and future hardening paths rather
-than represented as fully resolved.
+```text
+Role-based network boundaries
+        ↓
+Least-privilege service identities
+        ↓
+Deterministic remediation policy
+        ↓
+Human authorization
+        ↓
+Action + target allowlists
+        ↓
+Audited automation
+        ↓
+Independent monitoring verification
+```
 
-This review establishes a clearer operational security baseline for the
-completed AI-assisted hybrid monitoring and automation lab.
+Remaining TLS, package-integrity, and lab-network trade-offs are documented explicitly rather than represented as fully resolved.

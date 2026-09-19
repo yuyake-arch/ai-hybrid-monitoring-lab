@@ -61,20 +61,26 @@ The Automation Server acts as the **Ansible control node**, while monitored Linu
 
 ## 1. Inventory Organization
 
-The existing Ansible inventory was extended with a dedicated group for systems that should receive Zabbix Agent.
+Environment-specific connection details are stored in the local Ansible inventory and are not committed to the repository.
 
-Example:
+The repository provides a sanitized inventory template:
+
+`automation/inventory/hosts.example.ini`
 
 ```ini
 [monitoring]
-aws-mon-core-01 ansible_host=10.10.10.10 ansible_user=ubuntu
+monitoring_server_name ansible_host=<Monitoring_Private_IP> ansible_user=username
 
 [automation]
-aws-auto-core-01 ansible_connection=local
+automation_server_name ansible_connection=local
 
 [zabbix_agents]
-aws-managed-svr-01 ansible_host=<PRIVATE_IP> ansible_user=ec2-user
+zabbix_agent_target_server_name ansible_host=<target_private_IP> ansible_user=username
 ```
+
+The actual `automation/inventory/hosts.ini` contains the environment-specific host mappings used by Ansible and is excluded from Git.
+
+This separation keeps deployment-specific addresses and connection details out of the public repository while preserving the inventory structure required to reproduce the automation.
 
 Using a dedicated `zabbix_agents` group allows the Zabbix Agent playbook to target only monitored nodes without modifying existing monitoring or automation servers.
 
@@ -574,31 +580,24 @@ Managed Server
 Zabbix Server
 ```
 
-For larger environments, individual IP-based Security Group rules are not scalable.
-
-A better architecture is to use dedicated Security Groups such as:
+For scalable monitoring access, monitored AWS instances use a dedicated Security Group:
 
 ```text
-sg-automation
-sg-zabbix-server
-sg-zabbix-agents
+zabbix-agent-sg
 ```
 
-and reference Security Groups as sources rather than adding individual server IP addresses.
-
-Example concept:
+For passive monitoring, the important inbound relationship is:
 
 ```text
-sg-zabbix-agents
+zabbix-agent-sg
 
 Inbound:
-TCP 22     ← sg-automation
-TCP 10050  ← sg-zabbix-server
+TCP 10050  ← Zabbix Server Security Group
 ```
 
-This design allows the same monitoring Security Group to be attached to many managed EC2 instances.
+This allows the same Zabbix Agent Security Group to be attached to multiple monitored EC2 instances without maintaining individual source IP addresses.
 
-Infrastructure-level automation of these Security Groups will be handled in a future Terraform phase.
+The Security Group was standardized as the project evolved and was later managed as part of the Terraform infrastructure phase.
 
 ---
 
@@ -747,19 +746,3 @@ Subsequent project phases extended this automation with:
 - Additional Linux distribution support
 - CI/CD validation for Ansible code
 - Ansible linting and automated syntax validation
-
----
-
-## Technologies Used
-
-- AWS EC2
-- Ansible
-- Zabbix 7.4
-- Zabbix Agent 2
-- Amazon Linux 2023
-- Ubuntu Linux
-- DNF
-- systemd
-- SSH
-- YAML
-- Git

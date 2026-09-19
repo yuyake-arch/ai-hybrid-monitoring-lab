@@ -52,19 +52,23 @@ Audit information is preserved through SQLite, structured application/remediatio
 
 ## Monitoring & Incident Detection
 
-Zabbix is the primary problem-detection source. Grafana provides infrastructure visualization for availability, CPU, memory, disk, network traffic, and recent Zabbix problems.
+Zabbix is the primary monitoring and problem-detection platform across the AWS and local VMware environments.
 
-The following dashboard captures the controlled Zabbix Agent failure used in the final validation scenario.
+The Zabbix monitoring overview provides a centralized view of monitored hosts, host availability, CPU utilization, problem severity, and Zabbix Server health.
 
-![Grafana Failure Detection](evidence/grafana-dashboard.png)
+![Zabbix Monitoring Overview](evidence/zabbix-monitoring-overview.png)
 
-The selected host, `AutomationServer01`, is shown as **Unavailable**, while the recent-problems panel records:
+Host-level dashboards confirm that monitoring data is collected from the local VMware environment as well as AWS. The local Ubuntu VM view below shows system load, CPU, memory, and swap metrics collected by Zabbix Agent 2.
 
-```text
-Linux: Zabbix agent is not available (for 3m)
-```
+![Zabbix Local VM Metrics](evidence/zabbix-local-vm-metrics.png)
 
-This provides the monitoring-side starting point for the incident lifecycle.
+Grafana provides a complementary infrastructure visualization layer using Zabbix monitoring data.
+
+![Grafana Dashboard](evidence/grafana-dashboard.png)
+
+The controlled failure scenario begins when the Zabbix Agent on the managed server becomes unavailable.
+
+Zabbix generates the problem event that initiates the incident-analysis workflow.
 
 ---
 
@@ -216,6 +220,39 @@ The project applies several controls to keep AI assistance separate from infrast
 - Git exclusions for secrets, runtime databases, Terraform state, and private inventory
 
 Host-name normalization used for monitoring/log correlation is separate from remediation authorization.
+
+### AWS Security Group Model
+
+AWS network access is further separated through role-specific Security Groups. The current project uses the following named groups:
+
+| Security Group | Primary Responsibility |
+| --- | --- |
+| `bastion-sg` | Administrative SSH entry path |
+| `monitor-sg` | Monitoring Server network boundary |
+| `ai-backend-sg` | AI Backend private service access |
+| `automation-sg` | Automation / Remediation API access |
+| `managed-server-sg` | Base managed workload access |
+| `ansible-managed-sg` | SSH access from the Automation Server to Ansible-managed nodes |
+| `zabbix-agent-sg` | Zabbix Agent monitoring access |
+| `splunk-client-sg` | AWS Splunk Forwarder client grouping and receiver authorization |
+| `splunk-server-sg` | Splunk Server service boundary |
+| `wireguard-sg` | WireGuard gateway access |
+
+The design uses **composable Security Groups** rather than placing every rule in a single server-specific group. A managed EC2 instance can therefore receive separate controls for its workload, Ansible management, Zabbix monitoring, and Splunk forwarding roles.
+
+For example:
+
+```text
+Managed EC2 instance
+├── managed-server-sg
+├── ansible-managed-sg
+├── zabbix-agent-sg
+└── splunk-client-sg
+```
+
+This also keeps service authorization explicit: Zabbix passive monitoring uses the Zabbix Server as the permitted source for TCP `10050`, AWS Splunk Forwarder clients associated with `splunk-client-sg` are permitted to send to the Splunk receiver on TCP `9997`, and Ansible-managed nodes authorize SSH from the Automation Server through `ansible-managed-sg`.
+
+The two AWS `default` Security Groups visible in the account are not part of this intentional project security model.
 
 ---
 

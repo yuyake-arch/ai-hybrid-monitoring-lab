@@ -1,214 +1,135 @@
-# Monitoring Stack & Zabbix Integration
+# Zabbix Monitoring Stack
 
-## Overview
+## Purpose
+This document describes the **monitoring platform foundation** of the lab, including preparation of the Monitoring Server as a Docker host, deployment of the containerized Zabbix/Grafana stack, component responsibilities, and Zabbix's role in problem detection and recovery verification.
 
-This document describes the centralized monitoring foundation implemented for the **AI-Assisted Hybrid Monitoring & Automation Lab**.
+AI analysis, Splunk correlation, remediation, and detailed end-to-end validation are documented separately.
 
-The monitoring stack runs on `aws-mon-core-01` using Docker Compose and provides Zabbix Server, Zabbix Web, PostgreSQL, and Grafana. Zabbix serves as the project's primary infrastructure problem-detection system.
-
-## Monitoring Stack
-
-The containerized stack is:
+## Monitoring Server Architecture
+The monitoring platform runs on:
 
 ```text
 aws-mon-core-01
-|
-+-- Docker Compose
-    |
-    +-- Zabbix Server
-    +-- Zabbix Web
-    +-- PostgreSQL
-    +-- Grafana
 ```
 
-| Component | Role |
-|---|---|
-| Zabbix Server | Metrics collection, triggers, and problem detection |
-| PostgreSQL | Zabbix data store |
-| Zabbix Web | Monitoring and configuration interface |
-| Grafana | Operational visualization |
-
-Splunk is deployed separately and provides centralized log evidence rather than replacing Zabbix as the infrastructure detection source.
-
-## Zabbix Agent Architecture
-
-Zabbix Agent2 is installed on monitored infrastructure servers, but not on the Zabbix Server host itself in the finalized design.
-
-The project supports both monitoring directions:
-
-### Passive Checks
+Its core monitoring services are deployed with Docker Compose:
 
 ```text
+Monitoring Server
+├── Docker
+│   ├── Zabbix Server
+│   ├── Zabbix Web
+│   ├── PostgreSQL
+│   └── Grafana
+├── Operator Console
+└── Splunk Universal Forwarder
+```
+
+The Operator Console and Splunk Universal Forwarder share the host but are separate project components rather than part of the Zabbix container stack.
+
+## Docker Host Preparation
+The Monitoring Server was prepared with Docker Engine and Docker Compose support before the monitoring stack was deployed.
+
+Docker provides a repeatable runtime boundary for the core monitoring services, while the host remains responsible for system-level access, persistent project data, networking, and supporting host services.
+
+Not every project component is containerized. The project uses different runtime models where appropriate:
+
+- Docker Compose for the Zabbix/Grafana monitoring stack
+- systemd-managed Python services for selected application components
+- direct Splunk Enterprise installation on the dedicated Splunk server
+
+This keeps containerization as an implementation mechanism rather than making it an architectural requirement for every service.
+
+## Monitoring Components
+| Component | Responsibility |
+| --- | --- |
+| Zabbix Server | Collects monitoring data and evaluates triggers/problems |
+| Zabbix Web | Provides administration and problem visibility |
+| PostgreSQL | Stores Zabbix configuration and monitoring data |
+| Grafana | Visualizes Zabbix-derived infrastructure metrics and problems |
+| Zabbix Agent 2 | Collects host-level metrics and availability data |
+
+The Zabbix Server host itself is excluded from the project-wide Zabbix Agent 2 deployment. Agent 2 is installed on the other monitored systems where host-level collection is required.
+
+## Monitoring Model
+Zabbix is the project's authoritative **problem-detection and recovery-verification platform**.
+
+Typical monitored signals include:
+
+- host availability
+- CPU utilization
+- memory utilization
+- filesystem usage
+- network traffic
+- Linux service availability
+
+```text
+Monitored Host
+     ↓
+Zabbix Agent 2
+     ↓
 Zabbix Server
-    |
-    | TCP 10050
-    v
-Zabbix Agent2
+     ↓
+Trigger Evaluation
+     ↓
+Problem / Recovery State
 ```
 
-Passive checks are suitable when the Zabbix Server can directly reach the monitored host.
-
-### Active Checks
-
-```text
-Zabbix Agent2
-    |
-    | TCP 10051
-    v
-Zabbix Server
-```
-
-Active checks remain available where the agent needs to initiate monitoring traffic.
-
-The relevant Security Groups retain the required monitoring rules with their purpose documented.
-
-## Hybrid Monitoring
-
-The local Ubuntu VM resides at:
-
-```text
-192.168.16.10
-```
-
-and is connected to AWS through the WireGuard overlay:
-
-```text
-Local wg0: 10.200.0.2
-AWS wg0:   10.200.0.1
-```
-
-The final hybrid architecture therefore does not depend on exposing Zabbix monitoring through the Monitoring Server's public address. WireGuard provides the private network path between the local environment and AWS.
-
-## AWS Host Monitoring
-
-AWS infrastructure hosts are monitored using Zabbix Agent2 according to their network reachability and host role.
-
-The Automation, AI Backend, Splunk, Managed, Bastion, and WireGuard infrastructure can participate in centralized monitoring. The Monitoring Server itself is the Zabbix Server and is intentionally excluded from the final Agent2 deployment policy.
-
-This avoids the earlier Docker-host self-monitoring complication where a containerized Zabbix Server appeared to the host agent as a Docker bridge source address.
-
-## Docker Networking Lesson
-
-During the earlier implementation, passive monitoring of the Docker host produced an Agent rejection because the Zabbix Server container originated from a Docker bridge address rather than the host's VPC address.
-
-This demonstrated an important principle:
-
-> Containerized monitoring components may present different source addresses than their host operating system.
-
-Although the final design no longer relies on Zabbix Agent2 on the Monitoring Server itself, the troubleshooting remains useful for understanding Docker networking and monitoring-source validation.
-
-## Host Identity
-
-Zabbix display names and infrastructure hostnames are not always identical.
-
-Where normalization is required for incident correlation, explicit identity mapping is used by the application layer. Identity mapping is used for correlation only and does not grant remediation authorization.
-
-Remediation authorization is independently controlled by the Automation Server's target allowlist.
-
-## Security Group Requirements
-
-Monitoring rules are limited to the required communication directions:
-
-```text
-Zabbix Server -> Agent2 : TCP 10050
-Agent2 -> Zabbix Server : TCP 10051
-```
-
-The exact direction depends on the configured monitoring mode.
-
-Broad `0.0.0.0/0` exposure is not required for internal Zabbix monitoring.
+The local Ubuntu environment reaches AWS monitoring services through the final WireGuard hybrid path.
 
 ## Grafana Integration
+Grafana is the visualization layer for Zabbix-derived infrastructure data.
 
-Grafana runs in the same Docker Compose stack as Zabbix and uses the Zabbix plugin/data source for infrastructure visualization.
+The final dashboard includes:
 
-Container-to-container API communication uses Docker internal networking:
+- Host Availability
+- CPU Utilization
+- Memory Utilization
+- Disk Utilization
+- Network Traffic
+- Recent Zabbix Problems
 
-```text
-Grafana
-    |
-    | Docker network
-    v
-Zabbix Web / API
-```
+Grafana does **not** replace Zabbix problem detection. Zabbix owns trigger and problem state; Grafana presents monitoring data operationally.
 
-This is distinct from administrator browser access, which is provided through the Bastion SSH-tunnel path.
-
-## Dashboard Role
-
-Grafana provides a reusable operational view of:
-
-- Host availability
-- CPU utilization
-- Memory utilization
-- Disk utilization
-- Network activity
-- Recent Zabbix problems
-
-Host selection and reusable panels avoid creating separate dashboards for every monitored server.
-
-Detailed dashboard polishing and validation evidence are documented in the observability-dashboard phase.
-
-## Zabbix and Splunk Responsibilities
-
-The final observability model intentionally separates metrics/problem detection from log evidence:
-
-| Platform | Primary Role |
-|---|---|
-| Zabbix | Metrics, availability, triggers, problem/recovery detection |
-| Grafana | Operational visualization |
-| Splunk | Centralized logs, search, and incident evidence |
-
-This separation is important to the AIOps workflow because a Zabbix problem initiates incident handling, while relevant Splunk evidence is retrieved later for context correlation.
-
-## Integration with Incident Analysis
-
-The completed monitoring flow is:
+## Role in the Incident Lifecycle
+Zabbix both begins and closes the monitored incident lifecycle:
 
 ```text
-Infrastructure
-    ↓
-Zabbix Metrics / Availability
-    ↓
-Zabbix Problem Detection
-    ↓
-Incident Analysis Backend
-    ↓
-Context Correlation and AI-Assisted Analysis
+Zabbix detects a problem
+        ↓
+Downstream correlation and analysis
+        ↓
+Human-approved remediation
+        ↓
+Automation executes
+        ↓
+Zabbix independently observes recovery
 ```
 
-The AI layer does not replace Zabbix detection. It receives the detected incident and augments it with deterministic analysis and bounded Splunk evidence.
+An automation result of `SUCCESS` is therefore not treated as proof of service recovery. Zabbix independently determines whether the original monitoring condition has cleared.
 
-## Recovery Verification
+## Administrative Access
+Zabbix Web and Grafana are internal administrative interfaces accessed through the Bastion/SSH-tunnel model.
 
-Zabbix also provides independent recovery verification after remediation.
+Port-forwarding details are maintained in [AWS EC2 Secure Network Access](aws-ec2-secure-network-access.md) rather than duplicated here.
 
-A successful automation result means that the predefined action executed successfully; it does not by itself prove that the monitored service recovered.
+## Agent Configuration Management
+Zabbix Agent 2 deployment is automated separately with Ansible. Platform-specific installation, configuration, handlers, and repeatable deployment are documented in [Automated Zabbix Agent Deployment](../02-ansible-zabbix-agent/automated-zabbix-agent-deployment.md).
 
-The operational distinction is:
+## Validation
+Controlled failure testing confirmed that Zabbix could:
 
-```text
-Automation SUCCESS
-        !=
-Service Recovery
+1. observe a monitored host,
+2. detect loss of Zabbix Agent availability,
+3. create a problem event,
+4. provide the incident signal used by the downstream workflow, and
+5. independently mark the problem resolved after service restoration.
 
-Zabbix RESOLVED
-        =
-Independent Recovery Evidence
-```
+The complete evidence chain is documented in [End-to-End Failure & Recovery Validation](../10-end-to-end-validation/end-to-end-failure-recovery-validation.md).
 
-This separation was validated during the end-to-end failure and recovery scenario.
-
-## Lessons Learned
-
-- Monitoring mode must match network reachability.
-- Zabbix TCP `10050` and `10051` represent different traffic directions.
-- Docker networking can change the source address seen by a host service.
-- Host identity normalization may be necessary across monitoring, logging, and automation systems.
-- Grafana and Zabbix have complementary rather than competing roles.
-- Log evidence should not be confused with the monitoring system that detected the incident.
-- Automation execution and monitoring recovery are separate operational states.
-
-## Result
-
-The Zabbix stack now provides the project's central infrastructure detection and recovery-verification layer. Together with Grafana, Splunk, the AI Backend, and the controlled remediation workflow, it supports the complete observe-to-verify operational lifecycle.
+## Related Documentation
+- [AWS Cloud Infrastructure](aws-cloud-infrastructure.md)
+- [AWS EC2 Secure Network Access](aws-ec2-secure-network-access.md)
+- [Automated Zabbix Agent Deployment](../02-ansible-zabbix-agent/automated-zabbix-agent-deployment.md)
+- [Dashboard & Observability](../09-observability-dashboards/dashboard-observability.md)
+- [End-to-End Failure & Recovery Validation](../10-end-to-end-validation/end-to-end-failure-recovery-validation.md)

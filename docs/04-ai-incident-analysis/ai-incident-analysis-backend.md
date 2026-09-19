@@ -682,27 +682,3 @@ The completed system integrates:
 The platform can automatically receive monitoring incidents, generate structured analysis, survive external LLM failures, retain incident history, and expose its own operational behavior through Splunk.
 
 The completed project later connected Splunk telemetry back into the AI Backend so incident analysis can use bounded operational evidence together with Zabbix incidents.
-
----
-
-## Technologies Used
-
-- AWS EC2
-- AWS VPC
-- Linux
-- Zabbix
-- FastAPI
-- Python
-- Pydantic
-- Gemini API
-- SQLite
-- JSON / JSON Lines
-- Splunk
-- Splunk Universal Forwarder
-- REST APIs
-
----
-
-**Project:** AI-Assisted Hybrid Monitoring & Automation Lab  
-**Day:** 9  
-**Focus:** FastAPI · Zabbix Webhook · Gemini · Structured AI Output · SQLite · Fault Tolerance · Splunk Observability
